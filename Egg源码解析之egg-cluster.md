@@ -50,24 +50,24 @@
 
 启动方式差异：
 
-从上图可以看出，`master`启动`agent`和`worker`的方式明显不一样，启动`agent`使用的是`child_process`的fork模式，启动各个`worker`使用的是`cluster`的fork模式，为什么不能都使用同一种方式来启动？因为它们所负责处理的事情性质是不一样的，`agent`是类似于作为各个`worker`秘书的存在，只负责帮它们处理轻量级的服务，是不直接对外提供http访问的，所以`master`用`cluster.fork`把各个`worker`启动起来，并提供对外访问http访问，这些`worker`在`clustr`的预处理下能够对同一端口进行监听而不会产生端口冲突，同时进行负载均衡使用round-robin策略把收到的http请求合理地分配给各个`worker`进行处理
+从上图可以看出，`master`启动`agent`和`worker`的方式明显不一样，启动`agent`使用的是`child_process`的fork模式，启动各个`worker`使用的是`cluster`的fork模式，为什么不能都使用同一种方式来启动？因为它们所负责处理的事情性质是不一样的，`agent`是类似于作为各个`worker`秘书的存在，只负责帮它们处理轻量级的服务，是不直接对外提供http访问的，所以`master`用`cluster.fork`把各个`worker`启动起来，并提供对外访问http访问，这些`worker`在`clustr`的预处理下能够对同一端口进行监听而不会产生端口冲突，同时进行负载均衡使用round-robin策略把收到的http请求合理地分配给各个`worker`进行处理
 
 进程间通信：
 
 `master`和`agent/worker`是real communication，`agent`和各个`worker`之间以及各个`worker`之间virtual communication
 
-* `master`继承了events模块，拥有events监听、发送消息的能力，`master`进程自身是通过订阅者模式来进行事务处理的，所以在`master`的源码里面并没有看到过多的`callback hell`
+* `master`继承了events模块，拥有events监听、发送消息的能力，`master`进程自身是通过订阅者模式来进行事务处理的，所以在`master`的源码里面并没有看到过多的`callback hell`
 * `master`是`agent`的父进程，可以通过IPC通道进行通信
 * `master`是`worker`的父进程，可以通过IPC通道进行通信
 * `agent`和各个`worker`之间是无法进行通信的，毕竟是不同进程，所以需要借助`master`的力量进行转发，`egg-cluster`封装了一个`messenger`的工具类，对各个进程间消息转发进行了封装
-* 各个`worker`之间由于是不同进程，也是无法进行通信的，原理同上
+* 各个`worker`之间由于是不同进程，也是无法进行通信的，原理同上
 
 各进程的状态通知
 
 * `worker`启动成功后`master`会对其状态进行监听，对于退出或者失联的`worker` `master`是清楚的，在这情况下`master`会对这些`worker`之前所绑定的事件进行销毁防止内存泄露，并且通知`agent`，最后refork出同等数量的`worker`保证业务的顺利进行，对`worker`的fork和refork操作都是通过工具类`cfork`进行的
 * `agent`启动成功后`master`会对其状态进行监听，对于退出或者失联的`agent` `master`是清楚的，在这情况下`master`会对这些`agent`之前所绑定的事件进行销毁防止内存泄露，并且通知各个`worker`，最后重启`agent`进程保证业务的顺利进行
 * `master`退出了或者失联了，`worker`怎么办？不用担心，`cluster`已经做好了这样的处理，当父进程退出后子进程自动退出
-* `master`退出了或者失联了，`agent`也像`worker`一样退出吗？然而并不是！这是`child_process.fork`和`cluster.fork`的不同之处，`master`退出了或者失联了，`agent`进程还继续运行，但是它的父进程已经不在了，它将会被`init`进程收养，从而成为孤儿进程，当这样的孤儿进程越来越多的时候服务器就会越来越卡。所以`master`退出后需要指定`agent`也一起退出！
+* `master`退出了或者失联了，`agent`也像`worker`一样退出吗？然而并不是！这是`child_process.fork`和`cluster.fork`的不同之处，`master`退出了或者失联了，`agent`进程还继续运行，但是它的父进程已经不在了，它将会被`init`进程收养，从而成为孤儿进程，当这样的孤儿进程越来越多的时候服务器就会越来越卡。所以`master`退出后需要指定`agent`也一起退出！
 
 开发模式
 
