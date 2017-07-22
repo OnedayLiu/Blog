@@ -35,7 +35,7 @@
 
 `master`类似于一个守护进程的存在：
 
-* 负责`agent`的启动、退出、重启以及
+* 负责`agent`的启动、退出、重启
 * 负责各个`worker`进程的启动、退出、以及refork，在开发模式下负责重启
 * 负责`agent`和各个`worker`之间的通信
 * 负责各个`worker`之间的通信
@@ -50,16 +50,16 @@
 
 启动方式差异：
 
-从上图可以看出，`master`启动`agent`和`worker`的方式明显不一样，启动`agent`使用的是`child_process`的fork模式，启动各个`worker`使用的是`cluster`的fork模式，为什么不能都使用同一种方式来启动？因为它们所负责处理的事情性质是不一样的，`agent`是类似于作为各个`worker`秘书的存在，只负责帮它们处理轻量级的服务，是不直接对外提供http访问的，所以`master`用`cluster.fork`把各个`worker`启动起来，并提供对外访问http访问，这些`worker`在`clustr`的预处理下能够对同一端口进行监听而不会产生端口冲突，同时进行负载均衡使用round-robin策略把收到的http请求合理地分配给各个`worker`进行处理
+从上图可以看出，`master`启动`agent`和`worker`的方式明显不一样，启动`agent`使用的是`child_process`的fork模式，启动各个`worker`使用的是`cluster`的fork模式，为什么不能都使用同一种方式来启动？因为它们所负责处理的事情性质是不一样的，`agent`是类似于作为各个`worker`秘书的存在，只负责帮它们处理轻量级的服务，是不直接对外提供http访问的，所以`master`用`cluster.fork`把各个`worker`启动起来，并提供对外http访问，这些`worker`在`cluster`的预处理下能够对同一端口进行监听而不会产生端口冲突，同时使用round-robin策略进行负载均衡把收到的http请求合理地分配给各个`worker`进行处理
 
 进程间通信：
 
-`master`和`agent/worker`是real communication，`agent`和各个`worker`之间以及各个`worker`之间virtual communication
+`master`和`agent/worker`是real communication，`agent`和`worker`之间以及各个`worker`之间是virtual communication
 
 * `master`继承了events模块，拥有events监听、发送消息的能力，`master`进程自身是通过订阅者模式来进行事务处理的，所以在`master`的源码里面并没有看到过多的`callback hell`
-* `master`是`agent`的父进程，可以通过IPC通道进行通信
-* `master`是`worker`的父进程，可以通过IPC通道进行通信
-* `agent`和各个`worker`之间是无法进行通信的，毕竟是不同进程，所以需要借助`master`的力量进行转发，`egg-cluster`封装了一个`messenger`的工具类，对各个进程间消息转发进行了封装
+* `master`是`agent`的父进程，相互可以通过IPC通道进行通信
+* `master`是`worker`的父进程，相互可以通过IPC通道进行通信
+* `agent`和各个`worker`之间毕竟是不同进程，是无法进行通信的，所以需要借助`master`的力量进行转发，`egg-cluster`封装了一个`messenger`的工具类，对各个进程间消息转发进行了封装
 * 各个`worker`之间由于是不同进程，也是无法进行通信的，原理同上
 
 各进程的状态通知
