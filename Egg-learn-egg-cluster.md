@@ -5,7 +5,7 @@
 - [Egg源码解析之egg-cluster](#egg源码解析之egg-cluster)
   - [egg-cluster是什么](#egg-cluster是什么)
   - [egg多进程模型](#egg多进程模型)
-  - [egg-cluster源码解析](#egg-cluster源码解析)
+  - [Don't talk, show me the code](#dont-talk-show-me-the-code)
     - [准备工作](#准备工作)
     - [Master(egg-cluster/lib/master.js)](#masteregg-clusterlibmasterjs)
     - [Master#constructor](#masterconstructor)
@@ -74,7 +74,7 @@
 **开发**模式下`agent`会监听相关文件的改动，然后通知`master`对`worker`进行重启操作
 > 开发模式下开启`egg-development`插件，对相关文件进行监听，监听到有文件改动的话向`master`发送`reload-worker`事件
 
-## egg-cluster源码解析
+## Don't talk, show me the code
 
 ### 准备工作
 
@@ -94,7 +94,7 @@ egg.startCluster(options, () => {
 });
 ```
 
-入口文件代码如此简单，那egg底层做了些什么？比如`egg.startCluster`这个方法里面做了些什么？查看`egg`模块的代码后发现：
+入口文件代码如此简单，那egg底层做了些什么？比如`egg.startCluster`这个方法里面做了些什么？
 
 ```js
 exports.startCluster = require('egg-cluster').startCluster;
@@ -110,7 +110,7 @@ exports.startCluster = function(options, callback) {
 };
 ```
 
-可以发现`startCluster`主要做了这些事情
+`startCluster`主要做了这些事情
 
 * 启动`master`进程
 * egg启动成功后执行`callback`方法，比如希望在egg启动成功后执行一些业务上的初始化操作
