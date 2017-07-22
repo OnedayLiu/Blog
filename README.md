@@ -4,4 +4,4 @@
 
 [Js Date对象](./date.md)
 
-[mongodb安装教程](./mongodb-install)
+[mongodb安装教程](./mongodb-install.md)
