@@ -5,7 +5,7 @@
 - [Egg源码解析之egg-cluster](#egg源码解析之egg-cluster)
   - [egg-cluster是什么](#egg-cluster是什么)
   - [egg多进程模型](#egg多进程模型)
-  - [Don't talk, show me the code](#dont-talk-show-me-the-code)
+  - [Talk is cheap. Show me the code](#talk-is-cheap-show-me-the-code)
     - [准备工作](#准备工作)
     - [Master(egg-cluster/lib/master.js)](#masteregg-clusterlibmasterjs)
     - [Master#constructor](#masterconstructor)
@@ -74,7 +74,7 @@
 **开发**模式下`agent`会监听相关文件的改动，然后通知`master`对`worker`进行重启操作
 > 开发模式下开启`egg-development`插件，对相关文件进行监听，监听到有文件改动的话向`master`发送`reload-worker`事件
 
-## Don't talk, show me the code
+## Talk is cheap. Show me the code
 
 ### 准备工作
 
