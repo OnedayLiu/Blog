@@ -23,15 +23,15 @@
 
 ## egg-cluster是什么
 
-为了将多核CPU的性能发挥到极致，最大程度地榨干服务器资源，egg采用多进程模型，解决了一个Node.js进程只能运行在一个CPU上的问题，[egg-cluster](https://github.com/eggjs/egg-cluster)是用于egg多进程管理的基础模块，负责底层的IPC通道的建立以及处理各进程的通信
+为了将多核CPU的性能发挥到极致，最大程度地榨干服务器资源，egg采用多进程模型，解决了一个Node.js进程只能运行在一个CPU上的问题，[egg-cluster](https://github.com/eggjs/egg-cluster)是用于egg多进程管理的基础模块，负责底层的IPC通道的建立以及处理各进程的通信
 
 ## egg多进程模型
 
 ![](/asserts/168aa630b7012b187c5f7ddd6872e2e130532548.png)
 
 * **master** 主进程
-* **worker** `master`的子进程，一般是根据服务器有多少个CPU启动多少个这样的`worker`进程，主要用于对外服务，处理各种业务层面的事情
-* **agent** `master`的子进程，主要处理公共资源的访问，如文件监听，或者帮worker处理一些公共事务，如一些事情是不需要每个`worker`都做一次的，`agent`帮忙做完之后通知它们执行之后的操作
+* **worker** `master`的子进程，一般是根据服务器有多少个CPU启动多少个这样的`worker`进程，主要用于对外服务，处理各种业务层面的事情
+* **agent** `master`的子进程，主要处理公共资源的访问，如文件监听，或者帮worker处理一些公共事务，如一些事情是不需要每个`worker`都做一次的，`agent`帮忙做完之后通知它们执行之后的操作
 
 `master`类似于一个守护进程的存在：
 
@@ -56,32 +56,32 @@
 
 `master`和`agent/worker`是real communication，`agent`和各个`worker`之间以及各个`worker`之间virtual communication
 
-* `master`继承了events模块，拥有events监听、发送消息的能力，`master`进程自身是通过订阅者模式来进行事务处理的，所以在`master`的源码里面并没有看到过多的`callback hell`
+* `master`继承了events模块，拥有events监听、发送消息的能力，`master`进程自身是通过订阅者模式来进行事务处理的，所以在`master`的源码里面并没有看到过多的`callback hell`
 * `master`是`agent`的父进程，可以通过IPC通道进行通信
 * `master`是`worker`的父进程，可以通过IPC通道进行通信
-* `agent`和各个`worker`之间是无法进行通信的，毕竟是不同进程，所以需要借助`master`的力量进行转发，`egg-cluster`封装了一个`messenger`的工具类，对各个进程间消息转发进行了封装
-* 各个`worker`之间由于是不同进程，也是无法进行通信的，原理同上
+* `agent`和各个`worker`之间是无法进行通信的，毕竟是不同进程，所以需要借助`master`的力量进行转发，`egg-cluster`封装了一个`messenger`的工具类，对各个进程间消息转发进行了封装
+* 各个`worker`之间由于是不同进程，也是无法进行通信的，原理同上
 
 各进程的状态通知
 
-* `worker`启动成功后`master`会对其状态进行监听，对于退出或者失联的`worker` `master`是清楚的，在这情况下`master`会对这些`worker`之前所绑定的事件进行销毁防止内存泄露，并且通知`agent`，最后refork出同等数量的`worker`保证业务的顺利进行，对`worker`的fork和refork操作都是通过工具类`cfork`进行的
-* `agent`启动成功后`master`会对其状态进行监听，对于退出或者失联的`agent` `master`是清楚的，在这情况下`master`会对这些`agent`之前所绑定的事件进行销毁防止内存泄露，并且通知各个`worker`，最后重启`agent`进程保证业务的顺利进行
-* `master`退出了或者失联了，`worker`怎么办？不用担心，`cluster`已经做好了这样的处理，当父进程退出后子进程自动退出
-* `master`退出了或者失联了，`agent`也像`worker`一样退出吗？然而并不是！这是`child_process.fork`和`cluster.fork`的不同之处，`master`退出了或者失联了，`agent`进程还继续运行，但是它的父进程已经不在了，它将会被`init`进程收养，从而成为孤儿进程，当这样的孤儿进程越来越多的时候服务器就会越来越卡。所以`master`退出后需要指定`agent`也一起退出！
+* `worker`启动成功后`master`会对其状态进行监听，对于退出或者失联的`worker` `master`是清楚的，在这情况下`master`会对这些`worker`之前所绑定的事件进行销毁防止内存泄露，并且通知`agent`，最后refork出同等数量的`worker`保证业务的顺利进行，对`worker`的fork和refork操作都是通过工具类`cfork`进行的
+* `agent`启动成功后`master`会对其状态进行监听，对于退出或者失联的`agent` `master`是清楚的，在这情况下`master`会对这些`agent`之前所绑定的事件进行销毁防止内存泄露，并且通知各个`worker`，最后重启`agent`进程保证业务的顺利进行
+* `master`退出了或者失联了，`worker`怎么办？不用担心，`cluster`已经做好了这样的处理，当父进程退出后子进程自动退出
+* `master`退出了或者失联了，`agent`也像`worker`一样退出吗？然而并不是！这是`child_process.fork`和`cluster.fork`的不同之处，`master`退出了或者失联了，`agent`进程还继续运行，但是它的父进程已经不在了，它将会被`init`进程收养，从而成为孤儿进程，当这样的孤儿进程越来越多的时候服务器就会越来越卡。所以`master`退出后需要指定`agent`也一起退出！
 
 开发模式
 
-**开发**模式下`agent`会监听相关文件的改动，然后通知`master`对`worker`进行重启操作
+**开发**模式下`agent`会监听相关文件的改动，然后通知`master`对`worker`进行重启操作
 > 开发模式下开启`egg-development`插件，对相关文件进行监听，监听到有文件改动的话向`master`发送`reload-worker`事件
 
 ## egg-cluster源码解析
 
 ### 准备工作
 
-读源码前需要理解两个模块的作用：
+读源码前需要理解两个模块的作用：
 
-* **messenger**，负责`master`，`agent`，`worker`IPC通信的消息转发
-* **cfork**，负责`worker`的启动，状态监听以及重启操作
+* **messenger**，负责`master`，`agent`，`worker`IPC通信的消息转发
+* **cfork**，负责`worker`的启动，状态监听以及重启操作
 
 写这篇文章的时候egg社区版最新版是1.6.0，下面的内容以该版本为准
 egg是通过`index.js`作为入口文件进行启动的，输入以下代码然后就可以成功启动了
