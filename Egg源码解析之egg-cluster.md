@@ -6,7 +6,7 @@
   - [egg-cluster是什么](#egg-cluster是什么)
   - [egg多进程模型](#egg多进程模型)
   - [egg-cluster源码解析](#egg-cluster源码解析)
-    - [准备工作](#准备工作)
+    - [ready](#ready)
     - [Master(egg-cluster/lib/master.js)](#masteregg-clusterlibmasterjs)
     - [Master#constructor](#masterconstructor)
     - [Master#forkAgentWorker](#masterforkagentworker)
@@ -76,7 +76,7 @@
 
 ## egg-cluster源码解析
 
-### 准备工作
+### ready
 
 读源码前需要理解两个模块的作用：
 
