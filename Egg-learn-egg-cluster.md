@@ -273,7 +273,7 @@ agent.ready(() => {
 });
 ```
 
-发现`agent`启动成功后调用`process.send()`通知`master`，`master`监听到该消息通过`messenger`转发出去
+`agent`启动成功后调用`process.send()`通知`master`，`master`监听到该消息通过`messenger`转发出去
 
 ```js
 // Master#forkAgentWorker
