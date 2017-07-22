@@ -1,8 +1,87 @@
+# Egg源码解析之egg-cluster
+
+<!-- TOC -->
+
+- [Egg源码解析之egg-cluster](#egg源码解析之egg-cluster)
+  - [egg-cluster是什么](#egg-cluster是什么)
+  - [egg多进程模型](#egg多进程模型)
+  - [egg-cluster源码解析](#egg-cluster源码解析)
+    - [准备工作](#准备工作)
+    - [Master(egg-cluster/lib/master.js)](#masteregg-clusterlibmasterjs)
+    - [Master#constructor](#masterconstructor)
+    - [Master#forkAgentWorker](#masterforkagentworker)
+    - [Master#onAgentStart](#masteronagentstart)
+    - [Master#forkAppWorkers](#masterforkappworkers)
+    - [Master#onAppStart](#masteronappstart)
+    - [Master#onAgentExit](#masteronagentexit)
+    - [Master#onAppExit](#masteronappexit)
+    - [Master#onReload](#masteronreload)
+    - [Master#onExit](#masteronexit)
+    - [Master#onSignal和Master#close](#masteronsignal和masterclose)
+
+<!-- /TOC -->
+
 ## egg-cluster是什么
 
-[egg-cluster](https://github.com/eggjs/egg-cluster)是用于egg进程管理的基础模块，负责底层的IPC通道的建立以及处理各进程的通信
+为了将多核CPU的性能发挥到极致，最大程度地榨干服务器资源，egg采用多进程模型，解决了一个Node.js进程只能运行在一个CPU上的问题，[egg-cluster](https://github.com/eggjs/egg-cluster)是用于egg多进程管理的基础模块，负责底层的IPC通道的建立以及处理各进程的通信
 
-## egg启动
+## egg多进程模型
+
+![](/asserts/168aa630b7012b187c5f7ddd6872e2e130532548.png)
+
+* **master** 主进程
+* **worker** `master`的子进程，一般是根据服务器有多少个CPU启动多少个这样的`worker`进程，主要用于对外服务，处理各种业务层面的事情
+* **agent** `master`的子进程，主要处理公共资源的访问，如文件监听，或者帮worker处理一些公共事务，如一些事情是不需要每个`worker`都做一次的，`agent`帮忙做完之后通知它们执行之后的操作
+
+`master`类似于一个守护进程的存在：
+
+* 负责`agent`的启动、退出、重启以及
+* 负责各个`worker`进程的启动、退出、以及refork，在开发模式下负责重启
+* 负责`agent`和各个`worker`之间的通信
+* 负责各个`worker`之间的通信
+
+各进程的启动顺序：
+
+* `master`启动后先启动`agent`进程
+* `agent`初始化成功后，通过`IPC`通道通知`master`
+* `master`根据CPU的个数启动相同数目的`worker`进程
+* `worker`进程初始化成功后，通过`IPC`通道通知`master`
+* 所有的进程初始化成功后，`master`通知`agent`和各个`worker`进程应用启动成功
+
+启动方式差异：
+
+从上图可以看出，`master`启动`agent`和`worker`的方式明显不一样，启动`agent`使用的是`child_process`的fork模式，启动各个`worker`使用的是`cluster`的fork模式，为什么不能都使用同一种方式来启动？因为它们所负责处理的事情性质是不一样的，`agent`是类似于作为各个`worker`秘书的存在，只负责帮它们处理轻量级的服务，是不直接对外提供http访问的，所以`master`用`cluster.fork`把各个`worker`启动起来，并提供对外访问http访问，这些`worker`在`clustr`的预处理下能够对同一端口进行监听而不会产生端口冲突，同时进行负载均衡使用round-robin策略把收到的http请求合理地分配给各个`worker`进行处理
+
+进程间通信：
+
+`master`和`agent/worker`是real communication，`agent`和各个`worker`之间以及各个`worker`之间virtual communication
+
+* `master`继承了events模块，拥有events监听、发送消息的能力，`master`进程自身是通过订阅者模式来进行事务处理的，所以在`master`的源码里面并没有看到过多的`callback hell`
+* `master`是`agent`的父进程，可以通过IPC通道进行通信
+* `master`是`worker`的父进程，可以通过IPC通道进行通信
+* `agent`和各个`worker`之间是无法进行通信的，毕竟是不同进程，所以需要借助`master`的力量进行转发，`egg-cluster`封装了一个`messenger`的工具类，对各个进程间消息转发进行了封装
+* 各个`worker`之间由于是不同进程，也是无法进行通信的，原理同上
+
+各进程的状态通知
+
+* `worker`启动成功后`master`会对其状态进行监听，对于退出或者失联的`worker` `master`是清楚的，在这情况下`master`会对这些`worker`之前所绑定的事件进行销毁防止内存泄露，并且通知`agent`，最后refork出同等数量的`worker`保证业务的顺利进行，对`worker`的fork和refork操作都是通过工具类`cfork`进行的
+* `agent`启动成功后`master`会对其状态进行监听，对于退出或者失联的`agent` `master`是清楚的，在这情况下`master`会对这些`agent`之前所绑定的事件进行销毁防止内存泄露，并且通知各个`worker`，最后重启`agent`进程保证业务的顺利进行
+* `master`退出了或者失联了，`worker`怎么办？不用担心，`cluster`已经做好了这样的处理，当父进程退出后子进程自动退出
+* `master`退出了或者失联了，`agent`也像`worker`一样退出吗？然而并不是！这是`child_process.fork`和`cluster.fork`的不同之处，`master`退出了或者失联了，`agent`进程还继续运行，但是它的父进程已经不在了，它将会被`init`进程收养，从而成为孤儿进程，当这样的孤儿进程越来越多的时候服务器就会越来越卡。所以`master`退出后需要指定`agent`也一起退出！
+
+开发模式
+
+**开发**模式下`agent`会监听相关文件的改动，然后通知`master`对`worker`进行重启操作
+> 开发模式下开启`egg-development`插件，对相关文件进行监听，监听到有文件改动的话向`master`发送`reload-worker`事件
+
+## egg-cluster源码解析
+
+### 准备工作
+
+读源码前需要理解两个模块的作用：
+
+* **messenger**，负责`master`，`agent`，`worker`IPC通信的消息转发
+* **cfork**，负责`worker`的启动，状态监听以及重启操作
 
 写这篇文章的时候egg社区版最新版是1.6.0，下面的内容以该版本为准
 egg是通过`index.js`作为入口文件进行启动的，输入以下代码然后就可以成功启动了
@@ -13,14 +92,14 @@ egg.startCluster(options, () => {
   console.log('started');
 });
 ```
+
 入口文件代码如此简单，那egg底层做了些什么？比如`egg.startCluster`这个方法里面做了些什么？查看`egg`模块的代码后发现：
 
 ```js
 exports.startCluster = require('egg-cluster').startCluster;
 ```
-原来`egg.startCluster`是`egg-cluster`模块暴露的一个API
 
-## egg-cluster源码解析
+原来`egg.startCluster`是`egg-cluster`模块暴露的一个API
 
 ```js
 // egg-cluster/index.js
@@ -29,11 +108,11 @@ exports.startCluster = function(options, callback) {
   new Master(options).ready(callback);
 };
 ```
+
 可以发现`startCluster`主要做了这些事情
 
 * 启动`master`进程
 * egg启动成功后执行`callback`方法，比如希望在egg启动成功后执行一些业务上的初始化操作
-
 
 ### Master(egg-cluster/lib/master.js)
 
@@ -42,7 +121,8 @@ exports.startCluster = function(options, callback) {
 class Master extends EventEmitter {} 
 ```
 
-#### Master#constructor
+### Master#constructor
+
 `constructor`里面大致可以分为5个部分：
 
 ```js
@@ -79,7 +159,6 @@ this.ready(() => {
 });
 ```
 
-
 ```js
 // 监听agent退出
 this.on('agent-exit', this.onAgentExit.bind(this));
@@ -110,24 +189,24 @@ process.once('SIGTERM', this.onSignal.bind(this, 'SIGTERM'));
 process.once('exit', this.onExit.bind(this));
 ```
 
-
 ```js
 // 监听端口冲突
 detectPort((err, port) => {
   /* istanbul ignore if */
   if (err) {
-	err.name = 'ClusterPortConflictError';
-	err.message = '[master] try get free port error, ' + err.message;
-	this.logger.error(err);
-	process.exit(1);
-	return;
+    err.name = 'ClusterPortConflictError';
+    err.message = '[master] try get free port error, ' + err.message;
+    this.logger.error(err);
+    process.exit(1);
+    return;
   }
   this.options.clusterPort = port;
   this.forkAgentWorker(); // 如果端口没有冲突则执行该方法
 });
 ```
 
-#### Master#forkAgentWorker
+### Master#forkAgentWorker
+
 `master`进程以`child_process`模式启动`agent`进程
 
 ```js
@@ -149,37 +228,39 @@ forkAgentWorker() {
   // 将消息通过messenger发送出去
   agentWorker.on('message', msg => {
 	if (typeof msg === 'string') msg = { action: msg, data: msg };
-	msg.from = 'agent';
-	this.messenger.send(msg);
+    msg.from = 'agent';
+    this.messenger.send(msg);
   });
   
   // master监听agent的异常，并打上对应的log信息方便问题排查
   agentWorker.on('error', err => {
-	err.name = 'AgentWorkerError';
-	err.id = agentWorker.id;
-	err.pid = agentWorker.pid;
-	this.logger.error(err);
+    err.name = 'AgentWorkerError';
+    err.id = agentWorker.id;
+    err.pid = agentWorker.pid;
+    this.logger.error(err);
   });
   
   // master监听agent的退出
   // 并通过messenger发送agent的'agent-exit'事件给master
   // 告诉master说agent退出了
   agentWorker.once('exit', (code, signal) => {
-	this.messenger.send({
-	  action: 'agent-exit',
-	  data: { code, signal },
-	  to: 'master',
-	  from: 'agent',
-	});
+    this.messenger.send({
+      action: 'agent-exit',
+      data: { code, signal },
+      to: 'master',
+      from: 'agent',
+    });
   });
 }
 ```
+
 到这里，`agent worker`已完成启动，并且`master`对其进行监听，这里有个疑问
 > agent启动成功后是如何通知master进行下一步操作的？
 
 ```js
 const agentWorker = this.agentWorker = childprocess.fork(agentWorkerFile, args, opt);
 ```
+
 以`child_process.fork`模式启动agent worker，读取的是`agent_worker.js`，截取里面的一段代码
 
 ```js
@@ -190,6 +271,7 @@ agent.ready(() => {
   process.send({ action: 'agent-start', to: 'master' });
 });
 ```
+
 发现`agent`启动成功后调用`process.send()`通知`master`，`master`监听到该消息通过`messenger`转发出去
 
 ```js
@@ -200,6 +282,7 @@ agentWorker.on('message', msg => {
   this.messenger.send(msg);
 });
 ```
+
 最终由`master`进行`agent-start`事件的响应
 
 ```js
@@ -213,7 +296,8 @@ this.once('agent-start', this.forkAppWorkers.bind(this));
 ...
 ```
 
-#### Master#onAgentStart
+### Master#onAgentStart
+
 `agent`启动后的操作
 
 ```js
@@ -226,9 +310,11 @@ onAgentStart() {
   this.agentWorker.id, this.agentWorker.pid, Date.now() - this.agentStartTime);
 }
 ```
+
 值得注意的是此时`app worker`还没启动，所以该消息会被丢弃，后续如果发生`agent`重启的情况会被`app worker`监听到
 
-#### Master#forkAppWorkers
+### Master#forkAppWorkers
+
 `master`进程以`cluster`模式启动`app worker`进程
 
 ```js
@@ -244,50 +330,50 @@ forkAppWorkers() {
   
   // 以cluster模式启动app worker进程
   cfork({
-	exec: appWorkerFile,
-	args,
-	silent: false,
-	count: this.options.workers,
-	// 在开发环境下不会进行refork，方便排查问题
-	refork: this.isProduction,
+    exec: appWorkerFile,
+    args,
+    silent: false,
+    count: this.options.workers,
+    // 在开发环境下不会进行refork，方便排查问题
+    refork: this.isProduction,
   });
 
   // master监听各个app worker进程的消息
   cluster.on('fork', worker => {
-	this.workers.set(worker.process.pid, worker);
-	worker.on('message', msg => {
-	  if (typeof msg === 'string') msg = { action: msg, data: msg };
-	  msg.from = 'app';
-	  this.messenger.send(msg);
-	});
-  	this.log('[master] app_worker#%s:%s start, state: %s, current workers: %j',
+    this.workers.set(worker.process.pid, worker);
+    worker.on('message', msg => {
+      if (typeof msg === 'string') msg = { action: msg, data: msg };
+      msg.from = 'app';
+      this.messenger.send(msg);
+    });
+    this.log('[master] app_worker#%s:%s start, state: %s, current workers: %j',
   worker.id, worker.process.pid, worker.state, Object.keys(cluster.workers));
   });
   
   // master监听各个app worker进程的disconnect事件并记录到log
   cluster.on('disconnect', worker => {
-	this.logger.info('[master] app_worker#%s:%s disconnect, suicide: %s, state: %s, current workers: %j',
-	worker.id, worker.process.pid, worker.exitedAfterDisconnect, worker.state, Object.keys(cluster.workers));
+    this.logger.info('[master] app_worker#%s:%s disconnect, suicide: %s, state: %s, current workers: %j',
+    worker.id, worker.process.pid, worker.exitedAfterDisconnect, worker.state, Object.keys(cluster.workers));
   });
   
   // master监听各个app worker进程的exit事件，并向master发送'app-exit'事件，将app worker退出后的事情交给master处理
   cluster.on('exit', (worker, code, signal) => {
-	this.messenger.send({
-	  action: 'app-exit',
-	  data: { workerPid: worker.process.pid, code, signal },
-	  to: 'master',
-	  from: 'app',
-	});
+    this.messenger.send({
+      action: 'app-exit',
+      data: { workerPid: worker.process.pid, code, signal },
+      to: 'master',
+      from: 'app',
+    });
   });
   
   // master监听各个app worker进程的listening事件，表示各个app worker已经可以开始工作了
   cluster.on('listening', (worker, address) => {
-	this.messenger.send({
-	  action: 'app-start',
-	  data: { workerPid: worker.process.pid, address },
-	  to: 'master',
-	  from: 'app',
-	});
+    this.messenger.send({
+      action: 'app-start',
+      data: { workerPid: worker.process.pid, address },
+      to: 'master',
+      from: 'app',
+    });
   });
 }
 ```
@@ -304,7 +390,8 @@ this.on('app-start', this.onAppStart.bind(this));
 ...
 ```
 
-#### Master#onAppStart
+### Master#onAppStart
+
 `app worker`启动后的操作
 
 ```js
@@ -345,7 +432,9 @@ this.ready(() => {
   this.messenger.send({ action, to: 'agent', data: this.options });
 });
 ```
-#### Master#onAgentExit
+
+### Master#onAgentExit
+
 `agent`退出后的处理
 
 ```js
@@ -378,7 +467,8 @@ onAgentExit(data) {
 }
 ```
 
-#### Master#onAppExit
+### Master#onAppExit
+
 `app worker`退出后的处理
 
 ```js
@@ -413,7 +503,8 @@ onAppExit(data) {
 }
 ```
 
-#### Master#onReload
+### Master#onReload
+
 **开发**模式下监听文件的改动，对`app worker`进行重启操作
 
 * 开发模式下开启`egg-development`插件，对相关文件进行监听，监听到有文件改动的话向`master`发送`reload-worker`事件
@@ -424,6 +515,7 @@ process.send({
   action: 'reload-worker',
 });
 ```
+
 * `master`通过监听`reload-worker`事件后执行`onReload`方法
 
 ```js
@@ -443,10 +535,12 @@ onReload() {
 }
 ```
 
-#### Master#onExit
+### Master#onExit
+
 `master`退出后的处理，该方法主要是打相关的log
 
-#### Master#onSignal和Master#close
+### Master#onSignal和Master#close
+
 测试的时候，`master`对收到的各个系统`signal`进行响应
 
 ```js
@@ -471,4 +565,3 @@ close() {
   process.exit(0);
 }
 ```
-
