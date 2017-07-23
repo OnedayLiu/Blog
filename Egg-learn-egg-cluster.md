@@ -59,8 +59,8 @@
 * `master`继承了events模块，拥有events监听、发送消息的能力，`master`进程自身是通过订阅者模式来进行事务处理的，所以在`master`的源码里面并没有看到过多的`callback hell`
 * `master`是`agent`的父进程，相互可以通过IPC通道进行通信
 * `master`是`worker`的父进程，相互可以通过IPC通道进行通信
-* `agent`和各个`worker`之间毕竟是不同进程，是无法进行通信的，所以需要借助`master`的力量进行转发，`egg-cluster`封装了一个`messenger`的工具类，对各个进程间消息转发进行了封装
-* 各个`worker`之间由于是不同进程，也是无法进行通信的，原理同上
+* `agent`和各个`worker`之间毕竟是不同进程，是无法直接进行通信的，所以需要借助`master`的力量进行转发，`egg-cluster`封装了一个`messenger`的工具类，对各个进程间消息转发进行了封装
+* 各个`worker`之间由于是不同进程，也是无法直接进行通信的，需要借助`master`的力量进行转发，原理同上
 
 各进程的状态通知
 
