@@ -2,22 +2,21 @@
 
 <!-- TOC -->
 
-- [Egg源码解析之egg-cluster](#egg源码解析之egg-cluster)
-  - [egg-cluster是什么](#egg-cluster是什么)
-  - [egg多进程模型](#egg多进程模型)
-  - [Talk is cheap. Show me the code](#talk-is-cheap-show-me-the-code)
-    - [准备工作](#准备工作)
-    - [Master(egg-cluster/lib/master.js)](#masteregg-clusterlibmasterjs)
-    - [Master#constructor](#masterconstructor)
-    - [Master#forkAgentWorker](#masterforkagentworker)
-    - [Master#onAgentStart](#masteronagentstart)
-    - [Master#forkAppWorkers](#masterforkappworkers)
-    - [Master#onAppStart](#masteronappstart)
-    - [Master#onAgentExit](#masteronagentexit)
-    - [Master#onAppExit](#masteronappexit)
-    - [Master#onReload](#masteronreload)
-    - [Master#onExit](#masteronexit)
-    - [Master#onSignal和Master#close](#masteronsignal和masterclose)
+- [egg-cluster是什么](#egg-cluster是什么)
+- [egg多进程模型](#egg多进程模型)
+- [Talk is cheap. Show me the code](#talk-is-cheap-show-me-the-code)
+  - [准备工作](#准备工作)
+  - [Master(egg-cluster/lib/master.js)](#masteregg-clusterlibmasterjs)
+  - [Master#constructor](#masterconstructor)
+  - [Master#forkAgentWorker](#masterforkagentworker)
+  - [Master#onAgentStart](#masteronagentstart)
+  - [Master#forkAppWorkers](#masterforkappworkers)
+  - [Master#onAppStart](#masteronappstart)
+  - [Master#onAgentExit](#masteronagentexit)
+  - [Master#onAppExit](#masteronappexit)
+  - [Master#onReload](#masteronreload)
+  - [Master#onExit](#masteronexit)
+  - [Master#onSignal和Master#close](#masteronsignal和masterclose)
 
 <!-- /TOC -->
 
