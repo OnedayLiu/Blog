@@ -1,5 +1,7 @@
 # Blog
 
+[egg-passport 使用方法](https://github.com/OnedayLiu/Blog/issues/6)
+
 [Git 常用命令](https://github.com/OnedayLiu/Blog/issues/5)
 
 [Egg源码解析之egg-cluster](https://github.com/OnedayLiu/Blog/issues/1)
